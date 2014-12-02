@@ -7,7 +7,7 @@ name= # Branch to update
 all= # Update all branches
 pattern= # Branch selection filter for -a
 current= # Branch we are currently on
-
+mode=-m # Update mode: -r (rebase) or -m (merge)
 
 ## Parse options
 
@@ -16,8 +16,12 @@ while [ -n "$1" ]; do
 	case "$arg" in
 	-a)
 		all=1;;
+	-r)
+		mode=-r;;
+	-m)
+		mode=-m;;
 	-*)
-		echo "Usage: tg [...] update ([<name>] | -a [<pattern>...])" >&2
+		echo "Usage: tg [...] update ([<name>] | -a [<pattern>...]) [(-r | -m)]" >&2
 		exit 1;;
 	*)
 		if [ -z "$all" ]; then
@@ -45,14 +49,14 @@ fi
 ensure_clean_tree
 
 recursive_update() {
-	$tg update
+	$tg update ${mode}
 	_ret=$?
 	[ $_ret -eq 3 ] && exit 3
 	return $_ret
 }
 
 update_branch() {
-	local name="$1" base_rev depcheck missing_deps HEAD
+	local name="$1" base_rev depcheck missing_deps base_old_name base_update_cmd update_cmd HEAD
 	## First, take care of our base
 
 	depcheck="$(get_temp tg-depcheck)"
@@ -69,10 +73,13 @@ update_branch() {
 	if [ -s "$depcheck" ]; then
 		# We need to switch to the base branch
 		# ...but only if we aren't there yet (from failed previous merge)
+		base_old_name="refs/tmp/old-top-base-$(echo $name | sed 's#/#_#')"
 		HEAD="$(git symbolic-ref HEAD)"
 		if [ "$HEAD" = "${HEAD#refs/top-bases/}" ]; then
 			switch_to_base "$name"
+			git update-ref "${base_old_name}" $(git ref refs/top-bases/$name)
 		fi
+		
 
 		cat "$depcheck" |
 			sed 's/ [^ ]* *$//' | # last is $name
@@ -124,9 +131,15 @@ update_branch() {
 				# only on the _dependencies_, not our branch itself!)
 
 				info "Updating base with $dep changes..."
-				if ! git merge "$dep"; then
+				if test "${mode}" = "-m"; then
+				    base_update_cmd="git merge \"$dep\""
+				else
+				    base_update_cmd="git rebase \"$dep\""
+				fi
+				    
+				if ! eval ${base_update_cmd}; then
 					if [ -z "$TG_RECURSIVE" ]; then
-						resume="\`git checkout $name && $tg update\` again"
+						resume="\`git checkout $name && $tg update ${mode}\` again"
 					else # subshell
 						resume='exit'
 					fi
@@ -181,16 +194,40 @@ update_branch() {
 		return 0
 	fi
 	info "Updating $name against new base..."
-	if ! git merge "$merge_with"; then
-		if [ -z "$TG_RECURSIVE" ]; then
-			info "Please commit merge resolution. No need to do anything else"
-			info "You can abort this operation using \`git reset --hard\` now"
-			info "and retry this merge later using \`$tg update\`."
-		else # subshell
-			info "Please commit merge resolution and call exit."
-			info "You can abort this operation using \`git reset --hard\`."
+	if test "${mode}" = "-r"; then
+		if test ! -z "${base_old_name}"; then
+			update_cmd="git rebase --onto \"${merge_with}\" \"${base_old_name}\""
+		else
+		    	update_cmd="git rebase \"${merge_with}\""
 		fi
-		exit 4
+		if ! eval ${update_cmd}; then
+			if [ -z "$TG_RECURSIVE" ]; then
+				info "Please stage merge resolution. Then iterate with git rebase --continue, until it succeeeds."
+				info "No need to do anything else"
+				info "You can abort this operation using \`git rebase --abort\` now"
+				info "and retry this merge later using \`$tg update ${mode}\`."
+			else # subshell
+				info "Please stage merge resolution. Then iterate with git rebase --continue,"
+				info "until it succeeds.  Then call exit."
+				info "You can abort this operation using \`git rebase --abort\`."
+			fi
+			exit 4
+		fi
+		if test ! -z "${base_old_name}"; then
+			git update-ref -d "${base_old_name}"
+		fi
+	else
+		if ! git merge "${merge_with}"; then
+			if [ -z "$TG_RECURSIVE" ]; then
+				info "Please commit merge resolution. No need to do anything else"
+				info "You can abort this operation using \`git reset --hard\` now"
+				info "and retry this merge later using \`$tg update ${mode}\`."
+			else # subshell
+				info "Please commit merge resolution and call exit."
+				info "You can abort this operation using \`git reset --hard\`."
+			fi
+			exit 4
+		fi
 	fi
 }
 
