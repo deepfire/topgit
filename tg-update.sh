@@ -14,14 +14,14 @@ mode=-m # Update mode: -r (rebase) or -m (merge)
 while [ -n "$1" ]; do
 	arg="$1"; shift
 	case "$arg" in
-	-a)
+	-a|--all)
 		all=1;;
-	-r)
+	-r|--rebase)
 		mode=-r;;
-	-m)
+	-m|--merge)
 		mode=-m;;
 	-*)
-		echo "Usage: tg [...] update ([<name>] | -a [<pattern>...]) [(-r | -m)]" >&2
+		echo "Usage: tg [...] update ([<name>] | -a [<pattern>...] | --all [<pattern>...]) [(-r | --rebase | -m | --merge)]" >&2
 		exit 1;;
 	*)
 		if [ -z "$all" ]; then
