@@ -56,7 +56,7 @@ recursive_update() {
 }
 
 update_branch() {
-	local name="$1" base_rev depcheck missing_deps base_old_name base_update_cmd update_cmd HEAD
+	local name="$1" base_rev depcheck missing_deps base_old_name base_update_cmd update_cmd ndeps must_merge HEAD
 	## First, take care of our base
 
 	depcheck="$(get_temp tg-depcheck)"
@@ -80,7 +80,17 @@ update_branch() {
 			git update-ref "${base_old_name}" $(git ref refs/top-bases/$name)
 		fi
 		
-
+		# Can't quite rebase if there's more than one dependency, so let's
+		# see if this is the case:
+		ndeps=$(cat "$depcheck" | 
+				   sed 's/ [^ ]* *$//' |
+				   sed 's/.* \([^ ]*\)$/+\1/' |
+				   sed 's/^\([^+]\)/-\1/' |
+				   uniq -s 1 |
+				   wc -l)
+		if test $ndeps -gt 1; then
+			must_merge=t
+		fi
 		cat "$depcheck" |
 			sed 's/ [^ ]* *$//' | # last is $name
 			sed 's/.* \([^ ]*\)$/+\1/' | # only immediate dependencies
@@ -131,7 +141,7 @@ update_branch() {
 				# only on the _dependencies_, not our branch itself!)
 
 				info "Updating base with $dep changes..."
-				if test "${mode}" = "-m"; then
+				if test "${mode}" = "-m" || test ! -z "${must_merge}"; then
 				    base_update_cmd="git merge \"$dep\""
 				else
 				    base_update_cmd="git rebase \"$dep\""
