@@ -7,7 +7,7 @@ name= # Branch to update
 all= # Update all branches
 pattern= # Branch selection filter for -a
 current= # Branch we are currently on
-mode=-m # Update mode: -r (rebase) or -m (merge)
+mode=-r # Update mode: -r (rebase) or -m (merge)
 
 ## Parse options
 
