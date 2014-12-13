@@ -7,7 +7,7 @@ name= # Branch to update
 all= # Update all branches
 pattern= # Branch selection filter for -a
 current= # Branch we are currently on
-mode=-r # Update mode: -r (rebase) or -m (merge)
+method=rebase # Update method: rebase or merge
 
 ## Parse options
 
@@ -17,9 +17,9 @@ while [ -n "$1" ]; do
 	-a|--all)
 		all=1;;
 	-r|--rebase)
-		mode=-r;;
+		method=rebase;;
 	-m|--merge)
-		mode=-m;;
+		method=merge;;
 	-*)
 		echo "Usage: tg [...] update ([<name>] | -a [<pattern>...] | --all [<pattern>...]) [(-r | --rebase | -m | --merge)]" >&2
 		exit 1;;
@@ -49,7 +49,7 @@ fi
 ensure_clean_tree
 
 recursive_update() {
-	$tg update ${mode}
+	$tg update ${methodflag}
 	_ret=$?
 	[ $_ret -eq 3 ] && exit 3
 	return $_ret
@@ -57,6 +57,8 @@ recursive_update() {
 
 update_branch() {
 	local name="$1" base_rev depcheck missing_deps base_old_name base_update_cmd update_cmd ndeps must_merge HEAD
+	info "; using $method mode to update $name"
+
 	## First, take care of our base
 
 	depcheck="$(get_temp tg-depcheck)"
@@ -114,7 +116,7 @@ update_branch() {
 					export PS1="[$dep] $PS1"
 					while ! recursive_update; do
 						# The merge got stuck! Let the user fix it up.
-						info "You are in a subshell. If you abort the merge,"
+						info "You are in a subshell. If you abort the $method,"
 						info "use \`exit 1\` to abort the recursive update altogether."
 						info "Use \`exit 2\` to skip updating this branch and continue."
 						if sh -i </dev/tty; then
@@ -140,19 +142,21 @@ update_branch() {
 				# or a remote base.  (branch_needs_update() is called
 				# only on the _dependencies_, not our branch itself!)
 
-				info "Updating base with $dep changes..."
-				if test "${mode}" = "-m" || test ! -z "${must_merge}"; then
-				    base_update_cmd="git merge \"$dep\""
+				if test "$method" = "merge" || test ! -z "$must_merge"; then
+					info "Merging $dep changes into base-of-$name..."
+					base_update_cmd="git merge \"$dep\""
 				else
-				    base_update_cmd="git rebase \"$dep\""
+					info "Rebasing base-of-$name on top of updated $dep..."
+					base_update_cmd="git rebase \"$dep\""
 				fi
-				    
+			    
 				if ! eval ${base_update_cmd}; then
 					if [ -z "$TG_RECURSIVE" ]; then
-						resume="\`git checkout $name && $tg update ${mode}\` again"
+						resume="\`git checkout $name && $tg update ${methodflag}\` again"
 					else # subshell
 						resume='exit'
 					fi
+					info "Merge conflict while doing a $method of base-of-$name with regard to $dep"
 					info "Please commit merge resolution and call $resume."
 					info "It is also safe to abort this operation using \`git reset --hard\`,"
 					info "but please remember that you are on the base branch now;"
@@ -162,7 +166,7 @@ update_branch() {
 				fi
 			done
 	else
-		info "The base is up-to-date."
+		info "The base of $name is up-to-date."
 	fi
 
 	# Home, sweet home...
@@ -204,7 +208,7 @@ update_branch() {
 		return 0
 	fi
 	info "Updating $name against new base..."
-	if test "${mode}" = "-r"; then
+	if test "$method" = "rebase"; then
 		if test ! -z "${base_old_name}"; then
 			update_cmd="git rebase --onto \"${merge_with}\" \"${base_old_name}\""
 		else
@@ -215,7 +219,7 @@ update_branch() {
 				info "Please stage merge resolution. Then iterate with git rebase --continue, until it succeeeds."
 				info "No need to do anything else"
 				info "You can abort this operation using \`git rebase --abort\` now"
-				info "and retry this merge later using \`$tg update ${mode}\`."
+				info "and retry this merge later using \`$tg update ${methodflag}\`."
 			else # subshell
 				info "Please stage merge resolution. Then iterate with git rebase --continue,"
 				info "until it succeeds.  Then call exit."
@@ -231,7 +235,7 @@ update_branch() {
 			if [ -z "$TG_RECURSIVE" ]; then
 				info "Please commit merge resolution. No need to do anything else"
 				info "You can abort this operation using \`git reset --hard\` now"
-				info "and retry this merge later using \`$tg update ${mode}\`."
+				info "and retry this merge later using \`$tg update ${methodflag}\`."
 			else # subshell
 				info "Please commit merge resolution and call exit."
 				info "You can abort this operation using \`git reset --hard\`."
