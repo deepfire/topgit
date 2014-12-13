@@ -184,10 +184,17 @@ update_branch() {
 		if branch_contains "$name" "$rname"; then
 			info "The $name head is up-to-date wrt. its remote branch."
 		else
+			if test "$method" = "merge"; then
+				info "Merging $dep changes into base-of-$name..."
+				head_update_cmd="git merge \"$rname\""
+			else
+				info "Rebasing base-of-$name on top of updated $dep..."
+				head_update_cmd="git rebase \"$rname\""
+			fi
 			info "Reconciling remote branch updates with $name base..."
 			# *DETACH* our HEAD now!
 			git checkout -q "refs/top-bases/$name"
-			if ! git merge "$rname"; then
+			if ! eval ${head_update_cmd}; then
 				info "Oops, you will need to help me out here a bit."
 				info "Please commit merge resolution and call:"
 				info "git checkout $name && git merge <commitid>"
